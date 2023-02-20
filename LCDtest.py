@@ -15,8 +15,8 @@ WAIT_TIME = 1           # [s] Time to wait between each refresh
 PWM_FREQ = 10000        # [Hz] 10kHz for Noctua PWM control
 
 # Configurable temperature and fan speed
-MIN_TEMP = 70
-MAX_TEMP = 90
+MIN_TEMP = 65
+MAX_TEMP = 95
 FAN_LOW = 20
 FAN_HIGH = 100
 FAN_OFF = 0
@@ -25,8 +25,6 @@ FAN_MAX = 100
 # logging and metrics (enable = 1)
 VERBOSE = 1
 NODE_EXPORTER = 0
-
-speed = MIN_TEMP
 
 # parse input arguments
 try:
@@ -81,33 +79,33 @@ def getCpuTemperature():
 
 # Set fan speed
 def setFanSpeed(speed,temp):
-    sbc.tx_pwm(fan , PWM_GPIO_NR, PWM_FREQ, speed, pulse_offset=0, pulse_cycles=0)
+  sbc.tx_pwm(fan , PWM_GPIO_NR, PWM_FREQ, speed, pulse_offset=0, pulse_cycles=0)
 
-    # print fan speed and temperature
-    if VERBOSE == 1:
-        print("fan speed: ",int(speed),"    temp: ",temp)
+  # print fan speed and temperature
+  if VERBOSE == 1:
+      print("fan speed: ",int(speed),"    temp: ",temp)
 
-    # write fan metrics to file for node-exporter/prometheus
-    if NODE_EXPORTER == 1:
-        # Save a reference to the original standard output
-        original_stdout = sys.stdout
-        with open('/var/lib/node_exporter/fan-metrics.prom', 'w') as f:
-            # Change the standard output to the file we created.
-            sys.stdout = f
-            print('raspberry_fan_speed ',speed)
-            print('raspberry_fan_temp ',temp)
-            print('raspberry_fan_min_temp ',MIN_TEMP)
-            print('raspberry_fan_max_temp ',MAX_TEMP)
-            print('raspberry_fan_fan_low ',FAN_LOW)
-            print('raspberry_fan_fan_high ',FAN_HIGH)
-            print('raspberry_fan_wait_time ',WAIT_TIME)
-            print('raspberry_fan_pwm_gpio ',PWM_GPIO_NR)
-            print('raspberry_fan_freq ',PWM_FREQ)
-            # Reset the standard output to its original value
-            sys.stdout = original_stdout
-            f.close()
+  # write fan metrics to file for node-exporter/prometheus
+  if NODE_EXPORTER == 1:
+      # Save a reference to the original standard output
+      original_stdout = sys.stdout
+      with open('/var/lib/node_exporter/fan-metrics.prom', 'w') as f:
+          # Change the standard output to the file we created.
+          sys.stdout = f
+          print('raspberry_fan_speed ',speed)
+          print('raspberry_fan_temp ',temp)
+          print('raspberry_fan_min_temp ',MIN_TEMP)
+          print('raspberry_fan_max_temp ',MAX_TEMP)
+          print('raspberry_fan_fan_low ',FAN_LOW)
+          print('raspberry_fan_fan_high ',FAN_HIGH)
+          print('raspberry_fan_wait_time ',WAIT_TIME)
+          print('raspberry_fan_pwm_gpio ',PWM_GPIO_NR)
+          print('raspberry_fan_freq ',PWM_FREQ)
+          # Reset the standard output to its original value
+          sys.stdout = original_stdout
+          f.close()
 
-    return()
+  return()
 
 # Handle fan speed
 def handleFanSpeed():
@@ -116,10 +114,12 @@ def handleFanSpeed():
     # Turn off the fan if temperature is below MIN_TEMP
     if temp < MIN_TEMP:
         setFanSpeed(FAN_OFF,temp)
+        return int(FAN_OFF)
 
     # Set fan speed to MAXIMUM if the temperature is above MAX_TEMP
     elif temp > MAX_TEMP:
         setFanSpeed(FAN_MAX,temp)
+        return int(FAN_MAX)
 
     # Caculate dynamic fan speed
     else:
@@ -127,10 +127,7 @@ def handleFanSpeed():
         delta = temp - MIN_TEMP
         speed = FAN_LOW + ( round(delta) * step )
         setFanSpeed(speed,temp)
-
-       	print("speed", speed)
-
-    return ()
+        return int(speed)
 
 
 def read_temp_sensor():
@@ -145,7 +142,7 @@ def read_temp_sensor():
     # Convert the data and output it
     celsTemp = ((data0 * 256 + data1) * 175.72 / 65536.0) - 46.85
     fahrTemp = celsTemp * 1.8 + 32
-    print("Sensor temp: " + str(fahrTemp))
+    #print("Sensor temp: " + str(fahrTemp))
     return(fahrTemp)
 
 lcd = rgb1602.RGB1602(16,2)
@@ -263,13 +260,18 @@ setFanSpeed(FAN_LOW,MIN_TEMP)
 #while loop to read and update temperature
 
 while True:
-  lcd.setCursor(0,0)
-  lcd.printout("Current Temp:")
+  #lcd.clear()
 
   #Read and update current read temperature
   curTemp = read_temp_sensor()
+  lcd.setCursor(0,0)
+  lcd.printout("Temp: %.2f F" % curTemp)
+  
+  # Handle fan speed every WAIT_TIME sec
+  speed = handleFanSpeed()
   lcd.setCursor(0,1)
-  lcd.printout("%.2f F" % curTemp)
+  disp = "Speed: " + str(speed) + "%"
+  lcd.printout(disp)
 
   #lcd_key = read_LCD_buttons()  #  Reading keys
   if (curTemp > desTemp):
@@ -277,9 +279,6 @@ while True:
   else:
       lcd.setRGB(124, 252, 0)
 
-
-    # Handle fan speed every WAIT_TIME sec
-  handleFanSpeed()
   time.sleep(WAIT_TIME)
 
 # except KeyboardInterrupt: # trap a CTRL+C keyboard interrupt
