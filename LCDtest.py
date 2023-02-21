@@ -209,6 +209,7 @@ def read_LCD_buttons():
 
 
 # Delay between each button press input
+# Current delay is 0.2 seconds
 def button_delay(oldepoch):
     if (time.time() - oldepoch >= 0.2):
         return True
@@ -246,6 +247,7 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
         lcd.printout("Manual: " + str(manualSpeed) + "%")
 
     if (menuupdate):
+        print("Entering Fan Mode Update")
         lcd.setCursor(0, 0)
         lcd.printout("Set Control:")
         lcd.setCursor(0, 1)
@@ -269,7 +271,8 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
                     if(lcd_key == btnSELECT):
                         selectmode = False
 
-                else:
+                #Elif to check if auto fan or manual update is selected
+                elif(not autoFan):
                     # Increment by 1 if left/right is pressed
                     # Increment by 10.0 if up/down is pressed
                     if (lcd_key is not None and button_delay(lastPress)):
@@ -282,19 +285,29 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
                         elif (lcd_key == btnDOWN):
                             manualSpeed -= 10
                         elif (lcd_key == btnSELECT):
-                            lcd.clear()
-                            lcd.printout("Fan Control Set:")
-                            lcd.setCursor(0, 1)
-                            if (autoFan):
-                                lcd.printout("Auto")
-                            else:
-                                lcd.printout("Manual: " + str(manualSpeed) + "%")
-                            time.sleep(2)
-                            lcd.clear()
-                            lastPress = time.time()
-                            yield autoFan
-                            yield manualSpeed
+                            print("Manual Speed Selected")
+                            break
+                        print("New speed selected")
                         lastPress = time.time()
+        print("New Fan Controls Set")
+        if(autoFan):
+            print("Mode: Auto")
+        else:
+            print("Mode: Manual" + str(manualSpeed) + "%")
+        lcd.clear()
+        lcd.setCursor(0, 0)
+        lcd.printout("Fan Control Set:")
+        lcd.setCursor(0, 1)
+        if (autoFan):
+            lcd.printout("Auto")
+        else:
+            lcd.printout("Manual: " + str(manualSpeed) + "%")
+        time.sleep(2)
+        lcd.clear()
+        yield autoFan
+        yield manualSpeed
+
+
 
 
 
@@ -311,6 +324,7 @@ def menu_goaltemp(menuupdate, desTemp, lastPress):
     lcd.printout("%.1f F" % desTemp)
 
     if (menuupdate):
+        print("Editing Target Temp")
         lcd.setCursor(0, 0)
         lcd.printout("Set Target Temp:")
         lcd.setCursor(0, 1)
@@ -366,6 +380,9 @@ desTemp = 70.0
 
 # Keep track of last button press
 lastPress = time.time()
+print("Entered Phase 1")
+print("Default temp: " + str(curTemp))
+print("Default target temp: " + str(desTemp))
 
 # while loop to set initial temperature target
 while True:
@@ -399,6 +416,7 @@ while True:
             lcd.printout("%.1f" % desTemp + " F")
             time.sleep(2)
             lcd.clear()
+            print("Phase 1 Complete")
             break
 
         lastPress = time.time()
@@ -437,6 +455,7 @@ def menu_timeout(oldepoch, menustate):
 autoFan = True
 # int/percentage value to keep track of manual speed starts at 100%
 manualSpeed = 100
+print("Entered Phase 2")
 
 # while loop to read and update temperature
 while True:
@@ -472,6 +491,7 @@ while True:
     if (not menuupdate and button_delay(lastPress)):
         # Go to next menu up
         if (lcd_key == btnRIGHT):
+            print("Going to next screen")
             if (menustate == 2):
                 menustate = 0
             else:
@@ -481,6 +501,7 @@ while True:
 
         # Go to previous menu
         elif (lcd_key == btnLEFT):
+            print("Going too prev screen")
             if (menustate == 0):
                 menustate = 2
             else:
@@ -489,6 +510,7 @@ while True:
             timetrack = time.time()
         # Set edit menu state to be true if not on main
         elif (lcd_key == btnSELECT and menustate > 0):
+            print("Entering edit mode")
             menuupdate = True
 
         lastPress = time.time()
