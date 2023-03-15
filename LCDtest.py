@@ -12,7 +12,7 @@ import sys, getopt
 
 # Configuration
 PWM_GPIO_NR = 12  # PWM gpio number used to drive PWM fan (gpio18 = pin 12)
-WAIT_TIME = 1  # [s] Time to wait between each refresh
+WAIT_TIME = 0.1  # [s] Time to wait between each refresh
 PWM_FREQ = 10000  # [Hz] 10kHz for Noctua PWM control
 
 # Configurable temperature and fan speed
@@ -138,9 +138,10 @@ def handleFanSpeed():
 
 
 # Handle manual speed
-def handleFanSpeed(ManualSpeed):
+def handleFanSpeedMan(ManualSpeed):
     temp = getCpuTemperature()
     setFanSpeed(ManualSpeed, temp)
+    print(ManualSpeed)
     return int(ManualSpeed)
 
 
@@ -227,7 +228,7 @@ def menu_main(curTemp, autoFan, manualSpeed):
     if (autoFan):
         speed = handleFanSpeed()
     else:
-        speed = handleFanSpeed(manualSpeed)
+        speed = handleFanSpeedMan(manualSpeed)
     lcd.setCursor(0, 1)
     disp = "Speed: " + str(speed) + "%"
     lcd.printout(disp)
@@ -247,6 +248,7 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
         lcd.printout("Manual: " + str(manualSpeed) + "%")
 
     if (menuupdate):
+        lcd.clear()
         print("Entering Fan Mode Update")
         lcd.setCursor(0, 0)
         lcd.printout("Set Control:")
@@ -256,6 +258,7 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
         selectmode = True
 
         while (True):
+            lcd.clear()
             if (autoFan):
                 lcd.printout("Auto")
             else:
@@ -289,6 +292,7 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
                             break
                         print("New speed selected")
                         lastPress = time.time()
+            time.sleep(WAIT_TIME)
         print("New Fan Controls Set")
         if(autoFan):
             print("Mode: Auto")
@@ -304,8 +308,7 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
             lcd.printout("Manual: " + str(manualSpeed) + "%")
         time.sleep(2)
         lcd.clear()
-        yield autoFan
-        yield manualSpeed
+        return [autoFan, manualSpeed]
 
 
 
@@ -446,6 +449,7 @@ def menu_timeout(oldepoch, menustate):
     # Current timeout time is 10 seconds will return to main menu afterwards
     if (menustate != 0):
         if (time.time() - oldepoch >= 10):
+            print("Menu time up going back to home")
             return 0
     return menustate
 
@@ -463,7 +467,7 @@ while True:
 
     # Read and update current read temperature
     curTemp = read_temp_sensor()
-
+    print("menu state is " + str(menustate))
     # Change color of LCD depending if temperature is higher than desired
     if (curTemp > desTemp):
         lcd.setRGB(255, 0, 0)
@@ -476,14 +480,15 @@ while True:
     elif (menustate == 1):
         result = menu_modedisplay(menuupdate, autoFan, manualSpeed, time.time())
         if(result is not None):
-            autoFan = next(result)
-            manualSpeed = next(result)
-        menu_timeout(timetrack, menustate)
+            autoFan = result[0]
+            manualSpeed = result[1]
+            menuupdate = False
+        menustate = menu_timeout(timetrack, menustate)
     elif (menustate == 2):
         tempval = menu_goaltemp(menuupdate, desTemp, time.time())
         if(tempval is not None):
             desTemp = tempval
-        menu_timeout(timetrack, menustate)
+        menustate = menu_timeout(timetrack, menustate)
     else:
         menu_main(curTemp, autoFan, desTemp)
 
@@ -501,7 +506,7 @@ while True:
 
         # Go to previous menu
         elif (lcd_key == btnLEFT):
-            print("Going too prev screen")
+            print("Going to prev screen")
             if (menustate == 0):
                 menustate = 2
             else:
@@ -514,6 +519,7 @@ while True:
             menuupdate = True
 
         lastPress = time.time()
+
 
     time.sleep(WAIT_TIME)
 
