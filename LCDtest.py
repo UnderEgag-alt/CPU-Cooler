@@ -12,7 +12,7 @@ import sys, getopt
 
 # Configuration
 PWM_GPIO_NR = 12  # PWM gpio number used to drive PWM fan (gpio18 = pin 12)
-WAIT_TIME = 0.1  # [s] Time to wait between each refresh
+WAIT_TIME = 0.0  # [s] Time to wait between each refresh
 PWM_FREQ = 10000  # [Hz] 10kHz for Noctua PWM control
 
 # Configurable temperature and fan speed
@@ -26,6 +26,37 @@ FAN_MAX = 100
 # logging and metrics (enable = 1)
 VERBOSE = 1
 NODE_EXPORTER = 0
+
+#Filler array used for blinking display
+blackout = [
+  0b11111,
+  0b11111,
+  0b11111,
+  0b11111,
+  0b11111,
+  0b11111,
+  0b11111,
+  0b11111
+]
+
+
+#Time between blinks
+BLINK_TIME = 0.81
+
+#Used to control the time between blinks
+def blink_delay(oldepoch):
+    if (time.time() - oldepoch >= BLINK_TIME):
+        return True
+    return False
+
+#Refresh rate of screen
+LCD_FPS = 1
+
+#Used to check if the screen should update or not in order to seperate logic from display
+def screen_refresh(oldepoch):
+    if (time.time() - oldepoch >= LCD_FPS):
+        return True
+    return False
 
 # parse input arguments
 try:
@@ -150,7 +181,7 @@ def read_temp_sensor():
     bus = smbus.SMBus(1)
     bus.write_byte(0x40, 0xF3)
 
-    time.sleep(0.3)
+    time.sleep(0.01)
     # SI7021 address, 0x40 Read data 2 bytes, Temperature
     data0 = bus.read_byte(0x40)
     data1 = bus.read_byte(0x40)
@@ -218,10 +249,8 @@ def button_delay(oldepoch):
 
 
 # Default phase2 Display
-def menu_main(curTemp, autoFan, manualSpeed):
-    lcd.clear()
-    lcd.setCursor(0, 0)
-    lcd.printout("Temp: %.2f F" % curTemp)
+def menu_main(curTemp, autoFan, manualSpeed, lastrefresh):
+
 
     # Handle fan speed every WAIT_TIME sec
     # Also check to see if manual speed has been enabled
@@ -229,40 +258,113 @@ def menu_main(curTemp, autoFan, manualSpeed):
         speed = handleFanSpeed()
     else:
         speed = handleFanSpeedMan(manualSpeed)
-    lcd.setCursor(0, 1)
-    disp = "Speed: " + str(speed) + "%"
-    lcd.printout(disp)
+
+    if(screen_refresh(lastrefresh)):
+        print("Screen refreshed")
+        lcd.clear()
+        lcd.setCursor(0, 0)
+        lcd.printout("Temp: %.2f F" % curTemp)
+        lcd.setCursor(0, 1)
+        disp = "Speed: " + str(speed) + "%"
+        lcd.printout(disp)
+        #Returns last refresh time
+        return time.time()
+    print("Did not refresh")
+    return lastrefresh
+
 
 
 # Phase 2 menu display function
-def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
-    lcd.clear()
-    lcd.setCursor(0, 0)
+def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress, lastrefresh):
+    if(screen_refresh(lastrefresh)):
+        lcd.clear()
+        lcd.setCursor(0, 0)
 
-    # Menu 1 screen will tell which fan state is on Auto or Manual
-    lcd.printout("Fan Control:")
-    lcd.setCursor(0, 1)
-    if (autoFan):
-        lcd.printout("Auto")
-    else:
-        lcd.printout("Manual: " + str(manualSpeed) + "%")
+        # Menu 1 screen will tell which fan state is on Auto or Manual
+        lcd.printout("Fan Control:")
+        lcd.setCursor(0, 1)
+        if (autoFan):
+            lcd.printout("Auto")
+        else:
+            lcd.printout("Manual: " + str(manualSpeed) + "%")
+        lastrefresh = time.time()
+
+
 
     if (menuupdate):
+        manualupdating = True
+        blink = False
+        lastblink = time.time()
+        lastrefresh = time.time()
         lcd.clear()
         print("Entering Fan Mode Update")
         lcd.setCursor(0, 0)
         lcd.printout("Set Control:")
         lcd.setCursor(0, 1)
+        lcd.customSymbol(0,blackout)
 
         #Keep track of changing mode or fan speed
         selectmode = True
 
         while (True):
-            lcd.clear()
-            if (autoFan):
-                lcd.printout("Auto")
-            else:
-                lcd.printout("Manual: " + str(manualSpeed) + "%")
+            if(screen_refresh(lastrefresh)):
+                lcd.clear()
+                lcd.setCursor(0, 0)
+                lcd.printout("Set Control:")
+                lcd.setCursor(0, 1)
+                if (autoFan):
+                    if(blink):
+                        for i in range(len("Auto")):
+                            lcd.setCursor(i,1)
+                            lcd.write(0)
+                        if(blink_delay(lastblink)):
+                            blink = False
+                            lastblink = time.time()
+
+                    else:
+                        lcd.printout("Auto")
+                        if(blink_delay(lastblink)):
+                            blink = True
+                            lastblink = time.time()
+
+                else:
+
+                    if(manualupdating):
+                        if (blink):
+                            for i in range(len("Manual:")):
+                                lcd.setCursor(i, 1)
+                                lcd.write(0)
+                            lcd.setCursor(8,1)
+                            lcd.printout(str(manualSpeed) + "%")
+                            if (blink_delay(lastblink)):
+                                blink = False
+                                lastblink = time.time()
+
+                        else:
+                            lcd.printout("Manual: " + str(manualSpeed) + "%")
+                            if (blink_delay(lastblink)):
+                                blink = True
+                                lastblink = time.time()
+                    else:
+                        print("reached here")
+                        if (blink):
+                            lcd.setCursor(0,1)
+                            lcd.printout("Manual: ")
+                            for i in range(len(str(manualSpeed))):
+                                lcd.write(0)
+                            lcd.printout("%")
+                            if (blink_delay(lastblink)):
+                                blink = False
+                                lastblink = time.time()
+
+                        else:
+                            lcd.printout("Manual: " + str(manualSpeed) + "%")
+                            if (blink_delay(lastblink)):
+                                blink = True
+                                lastblink = time.time()
+
+
+                lastrefresh = time.time()
 
             lcd_key = read_LCD_buttons()
 
@@ -271,8 +373,13 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
                     #inverse mode when either button are pressed
                     if(lcd_key == btnRIGHT or lcd_key == btnLEFT):
                         autoFan = not autoFan
+                        lastrefresh = 10
+                        print("Changing modes")
                     if(lcd_key == btnSELECT):
                         selectmode = False
+                        lastrefresh = 10
+                        manualupdating = False
+                    lastPress = time.time()
 
                 #Elif to check if auto fan or manual update is selected
                 elif(not autoFan):
@@ -280,19 +387,23 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
                     # Increment by 10.0 if up/down is pressed
                     if (lcd_key is not None and button_delay(lastPress)):
                         if (lcd_key == btnRIGHT):
-                            manualSpeed += 1
+                            if(manualSpeed < 100):
+                                manualSpeed += 1
                         elif (lcd_key == btnLEFT):
-                            manualSpeed -= 1
+                            if(manualSpeed > 0):
+                                manualSpeed -= 1
                         elif (lcd_key == btnUP):
-                            manualSpeed += 10
+                            if (manualSpeed < 100):
+                                manualSpeed += 10
                         elif (lcd_key == btnDOWN):
-                            manualSpeed -= 10
+                            if (manualSpeed > 0):
+                                manualSpeed -= 10
                         elif (lcd_key == btnSELECT):
                             print("Manual Speed Selected")
                             break
                         print("New speed selected")
                         lastPress = time.time()
-            time.sleep(WAIT_TIME)
+                        lastrefresh = 10
         print("New Fan Controls Set")
         if(autoFan):
             print("Mode: Auto")
@@ -308,7 +419,8 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
             lcd.printout("Manual: " + str(manualSpeed) + "%")
         time.sleep(2)
         lcd.clear()
-        return [autoFan, manualSpeed]
+        return [autoFan, manualSpeed, 10]
+    return lastrefresh
 
 
 
@@ -319,22 +431,29 @@ def menu_modedisplay(menuupdate, autoFan, manualSpeed, lastPress):
 
 
 # Display current target/goal temperature and give option to update to new one
-def menu_goaltemp(menuupdate, desTemp, lastPress):
-    lcd.clear()
-    lcd.setCursor(0, 0)
-    lcd.printout("Target Temp:")
-    lcd.setCursor(0, 1)
-    lcd.printout("%.1f F" % desTemp)
+def menu_goaltemp(menuupdate, desTemp, lastPress, lastrefresh):
+    if(screen_refresh(lastrefresh)):
+        lcd.clear()
+        lcd.setCursor(0, 0)
+        lcd.printout("Target Temp:")
+        lcd.setCursor(0, 1)
+        lcd.printout("%.1f F" % desTemp)
+        return time.time()
+
 
     if (menuupdate):
         print("Editing Target Temp")
         lcd.setCursor(0, 0)
         lcd.printout("Set Target Temp:")
         lcd.setCursor(0, 1)
+        lastrefresh = time.time()
 
         while (True):
             # format second line to always have 4 characters in the float XX.X
-            lcd.printout("%.1f" % desTemp + " F")
+            if(screen_refresh(lastrefresh)):
+                lcd.setCursor(0, 1)
+                lcd.printout("%.1f" % desTemp + " F    ")
+                lastrefresh = time.time()
 
             lcd_key = read_LCD_buttons()  # Reading keys
             # Increment by 0.1 if left/right is pressed
@@ -360,9 +479,12 @@ def menu_goaltemp(menuupdate, desTemp, lastPress):
                     time.sleep(2)
                     lcd.clear()
                     lastPress = time.time()
-                    return desTemp
+                    return [desTemp, 10]
+                lastrefresh = 10
                 lastPress = time.time()
                 print("Desired Temp Update: " + str(desTemp))
+    print(str(lastrefresh))
+    return lastrefresh
 
 
 
@@ -461,6 +583,9 @@ autoFan = True
 manualSpeed = 100
 print("Entered Phase 2")
 
+#keep track of last refresh
+lastrefresh = time.time()
+
 # while loop to read and update temperature
 while True:
     # lcd.clear()
@@ -476,21 +601,30 @@ while True:
 
     # Check which menu to display
     if (menustate == 0):
-        menu_main(curTemp, autoFan, desTemp)
+       lastrefresh = menu_main(curTemp, autoFan, desTemp, lastrefresh)
     elif (menustate == 1):
-        result = menu_modedisplay(menuupdate, autoFan, manualSpeed, time.time())
-        if(result is not None):
+        result = menu_modedisplay(menuupdate, autoFan, manualSpeed, time.time(), lastrefresh)
+        if(result is not None and type(result) == list):
             autoFan = result[0]
             manualSpeed = result[1]
+            lastrefresh = result[2]
             menuupdate = False
+            menustate = 0
+        elif(result is not None and type(result) != list):
+            lastrefresh = result
         menustate = menu_timeout(timetrack, menustate)
     elif (menustate == 2):
-        tempval = menu_goaltemp(menuupdate, desTemp, time.time())
-        if(tempval is not None):
-            desTemp = tempval
+        tempval = menu_goaltemp(menuupdate, desTemp, time.time(), lastrefresh)
+        if(tempval is not None and type(tempval) == list):
+            desTemp = tempval[0]
+            lastrefresh = 10
+            menuupdate = False
+            menustate = 0
+        elif(tempval is not None and type(tempval) == float):
+            lastrefresh = tempval
         menustate = menu_timeout(timetrack, menustate)
     else:
-        menu_main(curTemp, autoFan, desTemp)
+        menu_main(curTemp, autoFan, desTemp, lastrefresh)
 
     lcd_key = read_LCD_buttons()  # Reading keys
     if (not menuupdate and button_delay(lastPress)):
@@ -503,6 +637,9 @@ while True:
                 menustate += 1
             # Begin timeout timer
             timetrack = time.time()
+            lastrefresh = 10
+            lastPress = time.time()
+
 
         # Go to previous menu
         elif (lcd_key == btnLEFT):
@@ -513,15 +650,21 @@ while True:
                 menustate -= 1
             # Begin timeout timer
             timetrack = time.time()
+            lastrefresh = 10
+            lastPress = time.time()
         # Set edit menu state to be true if not on main
         elif (lcd_key == btnSELECT and menustate > 0):
             print("Entering edit mode")
             menuupdate = True
+            lastrefresh = 10
+            lastPress = time.time()
 
-        lastPress = time.time()
 
 
-    time.sleep(WAIT_TIME)
+
+
+
+    #time.sleep(WAIT_TIME)
 
 # except KeyboardInterrupt: # trap a CTRL+C keyboard interrupt
 #     setFanSpeed(FAN_LOW,MIN_TEMP)
